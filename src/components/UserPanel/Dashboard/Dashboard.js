@@ -8,7 +8,7 @@ import EmployeeStack from "./EmployeeStack";
 export default function Dashboard() {
   return (
     <div className="min-h-screen w-full pb-14 px-3 sm:px-5 md:px-8 bg-gray-100">
-      <div className="text-2xl sm:text-3xl font-semibold mb-6 text-primary600">
+      <div className="text-3xl sm:text-3xl font-semibold mb-6 text-primary600">
         Dashboard Overview
       </div>
 
