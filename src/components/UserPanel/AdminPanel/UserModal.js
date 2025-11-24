@@ -103,9 +103,9 @@ export default function UserModal({ open, onClose, onSave, user }) {
           </div>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium mb-1">Status</label>
-            <select name="status" value={form.status} onChange={handleChange} className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary500">
+            <select name="status" value={form.status} onChange={handleChange} className="w-full px-4 py-2 border border-neutral50 rounded focus:outline-none ">
               <option value="Active">Active</option>
-              <option value="Blocked">Blocked</option>
+              <option value="Blocked">In-Active</option>
             </select>
           </div>
         </div>
