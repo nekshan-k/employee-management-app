@@ -9,6 +9,7 @@ import UserProfilePage from "./pages/userPanel/userProfile"
 import AdminPanelPage from "./pages/userPanel/AdminPanel"
 import { ToastContainer } from "react-toastify"
 import "react-toastify/dist/ReactToastify.css"
+import LeavesHomePage from "./pages/userPanel/leaves"
 
 function AppRoutesContent() {
   const { isAuthenticated } = useAuth()
@@ -30,6 +31,7 @@ function AppRoutesContent() {
           <Route index element={<DashboardPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="userProfile" element={<UserProfilePage />} />
+          <Route path="leaves" element={<LeavesHomePage />} />
           <Route path="admin" element={<AdminPanelPage />} />
         </Route>
       </Routes>

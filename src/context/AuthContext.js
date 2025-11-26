@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       try {
         const payload = JSON.parse(atob(token.split(".")[0]))
         setUser({ username: payload.username })
-        setRole(payload.role || "user")
+        setRole(payload.role || "admin")
       } catch {
         removeToken()
         setUser(null)
@@ -30,14 +30,8 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  function login({ username, password, role: selectedRole }) {
-    if (selectedRole === "user" && username === "niks" && password === "123") {
-      const token = issueStaticToken(username, "user")
-      setToken(token)
-      setUser({ username })
-      setRole("user")
-      return true
-    } else if (selectedRole === "admin" && username === "admin" && password === "321") {
+  function login({ username, password }) {
+    if (username === "admin@wealthmax.co.uk" && password === "123") {
       const token = issueStaticToken(username, "admin")
       setToken(token)
       setUser({ username })

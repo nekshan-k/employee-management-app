@@ -1,105 +1,144 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 import Button from "../../ui/buttons/Button";
+
+let modelsLoadedPromise = null;
+
+function loadModels() {
+  if (!modelsLoadedPromise) {
+    modelsLoadedPromise = Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+      faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+      faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+    ]);
+  }
+  return modelsLoadedPromise;
+}
 
 export default function FaceCheckModal({ profileImg, mode, onSuccess, onCancel }) {
   const videoRef = useRef();
   const canvasRef = useRef();
-  const tempCanvasRef = useRef();
   const [modelsReady, setModelsReady] = useState(false);
   const [status, setStatus] = useState("ready");
   const [captured, setCaptured] = useState("");
   const [distance, setDistance] = useState(null);
   const [submitSeconds, setSubmitSeconds] = useState(0);
   const [coordinates, setCoordinates] = useState(null);
-  const [animateMatch, setAnimateMatch] = useState(false);
+  const [refDescriptor, setRefDescriptor] = useState(null);
+  const [loadingText, setLoadingText] = useState("Loading...");
   const intervals = useRef([]);
-console.log(animateMatch);
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
-      await faceapi.nets.faceLandmark68Net.loadFromUri("/models");
-      await faceapi.nets.faceRecognitionNet.loadFromUri("/models");
-      if (mounted) setModelsReady(true);
-    }
-    load();
-    startCamera();
-    return () => {
-      mounted = false;
-      stopCamera();
-      intervals.current.forEach(i => clearInterval(i));
-      intervals.current = [];
-    };
+
+  const stopCamera = useCallback(() => {
+    try {
+      const s = videoRef.current?.srcObject;
+      s?.getTracks().forEach(t => t.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
+    } catch {}
   }, []);
 
-  async function startCamera() {
+  const startCamera = useCallback(async () => {
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: true });
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
       if (videoRef.current) videoRef.current.srcObject = s;
       setStatus("ready");
       setCoordinates(null);
     } catch {
       setStatus("cam-error");
     }
-  }
+  }, []);
 
-  function stopCamera() {
-    try {
-      const s = videoRef.current?.srcObject;
-      s?.getTracks().forEach(t => t.stop());
-      if (videoRef.current) videoRef.current.srcObject = null;
-    } catch {}
-  }
+  useEffect(() => {
+    let mounted = true;
+    async function init() {
+      try {
+        setLoadingText("Preparing verification...");
+        await loadModels();
+        if (!mounted) return;
+        setModelsReady(true);
+        setLoadingText("");
+        await startCamera();
+      } catch {
+        if (!mounted) return;
+        setStatus("process-error");
+      }
+    }
+    init();
+    return () => {
+      mounted = false;
+      stopCamera();
+      intervals.current.forEach(i => clearInterval(i));
+      intervals.current = [];
+    };
+  }, [startCamera, stopCamera]);
 
-  function captureFrameToCanvas(ref) {
+  useEffect(() => {
+    async function computeRef() {
+      if (!modelsReady || !profileImg) return;
+      try {
+        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160 });
+        const refImg = await faceapi.fetchImage(profileImg);
+        const det = await faceapi
+          .detectSingleFace(refImg, options)
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        if (det) setRefDescriptor(det.descriptor);
+      } catch {
+        setRefDescriptor(null);
+      }
+    }
+    computeRef();
+  }, [modelsReady, profileImg]);
+
+  const captureFrameToCanvas = () => {
     const v = videoRef.current;
-    const c = ref.current;
-    const w = v.videoWidth;
-    const h = v.videoHeight;
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(v, 0, 0, w, h);
-  }
+    const c = canvasRef.current;
+    if (!v || !c || !v.videoWidth || !v.videoHeight) return;
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0, v.videoWidth, v.videoHeight);
+  };
 
-  async function capture() {
-    setStatus("capturing");
-    captureFrameToCanvas(canvasRef);
-    const data = canvasRef.current.toDataURL("image/png");
-    setCaptured(data);
-    setCoordinates(await getCoordinates());
-    stopCamera();
-    setAnimateMatch(true);
-    setTimeout(() => compare(), 200);
-  }
-
-  async function getCoordinates() {
-    return new Promise((resolve) => {
+  const getCoordinates = () =>
+    new Promise(resolve => {
       if (!navigator.geolocation) return resolve(null);
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
         () => resolve(null),
         { timeout: 5000 }
       );
     });
-  }
 
-  async function compare() {
-    setAnimateMatch(false);
+  const capture = async () => {
+    if (!modelsReady || !refDescriptor) return;
+    setStatus("capturing");
+    captureFrameToCanvas();
+    const data = canvasRef.current.toDataURL("image/png");
+    setCaptured(data);
+    setCoordinates(await getCoordinates());
+    stopCamera();
+    setTimeout(() => compare(), 150);
+  };
+
+  const compare = async () => {
     try {
+      if (!refDescriptor) {
+        setStatus("process-error");
+        return;
+      }
       setStatus("verifying");
-      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
-      const ref = await faceapi.fetchImage(profileImg);
-      const refDet = await faceapi.detectSingleFace(ref, options).withFaceLandmarks().withFaceDescriptor();
-      const capDet = await faceapi.detectSingleFace(canvasRef.current, options).withFaceLandmarks().withFaceDescriptor();
-      if (!refDet || !capDet) {
+      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160 });
+      const det = await faceapi
+        .detectSingleFace(canvasRef.current, options)
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+      if (!det) {
         setStatus("not-matched");
         return;
       }
-      const dist = faceapi.euclideanDistance(refDet.descriptor, capDet.descriptor);
-      setDistance(dist.toFixed(4));
-      if (dist <= 0.55) {
+      const dist = faceapi.euclideanDistance(refDescriptor, det.descriptor);
+      const d = Number(dist.toFixed(4));
+      setDistance(d.toFixed(4));
+      if (d <= 0.55) {
         setStatus("matched");
         startTimer();
       } else {
@@ -108,9 +147,9 @@ console.log(animateMatch);
     } catch {
       setStatus("process-error");
     }
-  }
+  };
 
-  function startTimer() {
+  const startTimer = () => {
     setSubmitSeconds(30);
     const iv = setInterval(() => {
       setSubmitSeconds(s => {
@@ -123,95 +162,217 @@ console.log(animateMatch);
       });
     }, 1000);
     intervals.current.push(iv);
-  }
+  };
 
-  function handleSubmit() {
+  const handleSubmit = () => {
     intervals.current.forEach(i => clearInterval(i));
     stopCamera();
-    onSuccess({ type: mode, coordinates });
+    onSuccess({ type: mode, coordinates, captured, distance });
     window.location.reload();
-  }
+  };
 
-  function handleClose() {
+  const handleClose = () => {
     intervals.current.forEach(i => clearInterval(i));
     stopCamera();
     onCancel();
     window.location.reload();
-  }
+  };
 
-  function retry() {
+  const retry = () => {
     setCaptured("");
     setStatus("ready");
     setDistance(null);
     startCamera();
-  }
+  };
+
+  const titleMap = {
+    checkin: "Check-in verification",
+    checkout: "Checkout verification",
+    startBreak: "Start break verification",
+    endBreak: "End break verification",
+  };
+
+  const showLive = !captured && (status === "ready" || status === "capturing");
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:overflow-auto">
-      <div className="w-full max-w-lg md:max-w-4xl mx-auto p-4">
-        <div className="flex flex-col md:flex-row gap-6 bg-white rounded-xl shadow-md p-4 relative">
-          <Button className="absolute right-3 top-3 bg-gray-200" onClick={handleClose}>Close</Button>
-          <div className="flex-1 flex flex-col mt-10 items-center">
-            {(!captured && (status === "ready" || status === "capturing")) && (
-              <div className="relative w-full flex flex-col items-center">
-                <video ref={videoRef} autoPlay muted playsInline className="w-full h-[424px] rounded object-cover bg-black border-4 border-indigo-200 shadow-md" />
-                <div className="mt-3 flex justify-start gap-3">
-                  <Button variant="primary" onClick={capture} disabled={!modelsReady}>Capture</Button>
-                  <Button variant="outline" onClick={handleClose}>Cancel</Button>
-                </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60">
+      <div className="w-full max-w-4xl mx-3 sm:mx-6">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-slate-100">
+            <div>
+              <div className="text-sm sm:text-base font-semibold text-slate-900">
+                {titleMap[mode] || "Face verification"}
               </div>
-            )}
-            {captured && (
-              <div className="w-full h-64 flex items-center justify-center gap-8">
-                <img src={captured} alt="Captured" className="rounded-full w-32 h-32 object-cover border-4 border-green-300 shadow" />
-                <img src={profileImg} alt="Profile" className="rounded-full w-32 h-32 object-cover border-4 border-gray-300 shadow" />
+              <div className="text-[11px] text-slate-500">
+                Keep your face centered. This takes about 2–3 seconds.
               </div>
-            )}
-            {(status === "matched" || status === "not-matched" || status === "process-error") && (
-              <div className="mt-4 w-full text-center text-sm font-semibold text-gray-700">
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleClose}
+            >
+              Close
+            </Button>
+          </div>
+
+          <div className="flex flex-col md:flex-row">
+            <div className="md:w-2/3 border-b md:border-b-0 md:border-r border-slate-100 p-4 sm:p-5 flex flex-col">
+              <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                {showLive && (
+                  <div className="w-full max-w-md">
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-black shadow-sm">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="w-full h-[260px] sm:h-[320px] object-cover"
+                      />
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                        <div className="h-40 w-40 sm:h-44 sm:w-44 rounded-full border-2 border-emerald-400/80" />
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                      <Button
+                        variant="primary"
+                        onClick={capture}
+                        disabled={!modelsReady || !refDescriptor}
+                        className="flex-1 justify-center rounded-lg"
+                      >
+                        {modelsReady && refDescriptor ? "Capture & verify" : "Preparing..."}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleClose}
+                        className="flex-1 justify-center rounded-lg"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    {!!loadingText && (
+                      <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                        {loadingText}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {captured && (
+                  <div className="flex flex-col items-center gap-4 w-full">
+                    <div className="flex items-center justify-center gap-6">
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">
+                          Captured
+                        </div>
+                        <img
+                          src={captured}
+                          alt="Captured"
+                          className="rounded-full w-24 h-24 sm:w-28 sm:h-28 object-cover border-4 border-emerald-300 shadow-sm"
+                        />
+                      </div>
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase">
+                          Registered
+                        </div>
+                        <img
+                          src={profileImg}
+                          alt="Profile"
+                          className="rounded-full w-24 h-24 sm:w-28 sm:h-28 object-cover border-4 border-slate-200 shadow-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {status === "matched" && (
+                      <Button
+                        variant="primary"
+                        onClick={handleSubmit}
+                        className="mt-2 px-6 py-2 rounded-lg"
+                      >
+                        Confirm & continue ({submitSeconds})
+                      </Button>
+                    )}
+                    {status === "not-matched" && (
+                      <Button
+                        variant="outline"
+                        onClick={retry}
+                        className="mt-2 px-6 py-2 rounded-lg w-full sm:w-48"
+                      >
+                        Try again
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+            </div>
+
+            <div className="md:w-1/3 p-4 sm:p-5 flex flex-col gap-4 bg-slate-50">
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold text-slate-600 uppercase">Status</div>
+                {status === "ready" && (
+                  <div className="text-sm text-slate-700">
+                    Align your face inside the circle and tap{" "}
+                    <span className="font-semibold">Capture & verify</span>.
+                  </div>
+                )}
+                {status === "capturing" && (
+                  <div className="text-sm text-slate-700">Capturing image, hold still…</div>
+                )}
+                {status === "verifying" && (
+                  <div className="text-sm text-slate-700">
+                    Matching with your registered photo. This will be quick.
+                  </div>
+                )}
                 {status === "matched" && (
-                  <>
-                    <span className="text-green-800 text-lg">Identity verified. You may proceed.</span>
-                    <div className="text-gray-600 mt-1">Verification score: {distance}</div>
-                  </>
+                  <div className="text-sm text-emerald-700">
+                    Face verified. Complete within {submitSeconds}s.
+                  </div>
                 )}
                 {status === "not-matched" && (
-                  <>
-                    <span className="text-red-700 text-lg">Verification failed.</span>
-                    <div className="text-gray-600 mt-1">Please ensure your face is visible and matches the registered profile photo.</div>
-                  </>
+                  <div className="text-sm text-rose-700">
+                    Match failed. Ensure good lighting and your full face is visible.
+                  </div>
                 )}
                 {status === "process-error" && (
-                  <>
-                    <span className="text-red-700 text-lg">A technical error occurred.</span>
-                    <div className="text-gray-600 mt-1">Please retry or contact the administrator if problem continues.</div>
-                  </>
+                  <div className="text-sm text-rose-700">
+                    Could not verify. Retry or contact your administrator.
+                  </div>
+                )}
+                {status === "cam-error" && (
+                  <div className="text-sm text-rose-700">
+                    Camera access blocked. Enable it in browser settings.
+                  </div>
                 )}
               </div>
-            )}
-            {status === "matched" && (
-              <div className="mt-2">
-                <Button variant="primary" onClick={handleSubmit}>Submit ({submitSeconds})</Button>
+
+              {distance !== null && (
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Match score
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-semibold text-slate-900">{distance}</span>
+                    <span className="text-[11px] text-slate-500">Threshold ≤ 0.55</span>
+                  </div>
+                </div>
+              )}
+
+              {coordinates && (
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-[11px] text-slate-600">
+                  <div className="font-semibold text-slate-500 mb-1 uppercase">Capture location</div>
+                  <div>
+                    Lat: {coordinates.lat.toFixed(5)}, Lon: {coordinates.lon.toFixed(5)}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-auto text-[11px] text-slate-500 leading-relaxed">
+                Your face snapshot and location are used only to create a secure attendance log.
               </div>
-            )}
-            {status === "not-matched" && (
-              <div className="mt-2">
-                <Button variant="outline" onClick={retry} className="w-full">Try Again</Button>
-              </div>
-            )}
-            {coordinates && (
-              <div className="mt-2 text-xs text-gray-600">
-                Coordinates: {coordinates.lat.toFixed(5)}, {coordinates.lon.toFixed(5)}
-              </div>
-            )}
-            {distance !== null && status === "matched" && (
-              <div className="mt-1 text-xs text-green-700">
-                Verification score: {distance}
-              </div>
-            )}
+            </div>
           </div>
-          <canvas ref={canvasRef} className="hidden" />
-          <canvas ref={tempCanvasRef} className="hidden" />
         </div>
       </div>
     </div>

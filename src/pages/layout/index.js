@@ -4,15 +4,13 @@ import { Outlet } from "react-router-dom";
 
 export default function Layout() {
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <div className="flex flex-col flex-grow">
-        <Header />
-        <div className="content-wrapper bg-mainbg flex-grow p-4 overflow-y-auto">
-          <main className="w-full py-12 px-6 bg-primary50">
-            <Outlet />
-          </main>
-        </div>
+    <div className="h-screen flex flex-col">
+      <Header />
+      <div className="flex flex-grow overflow-hidden">
+        <Sidebar />
+        <main className="flex-grow overflow-y-auto w-full py-12 px-6">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
