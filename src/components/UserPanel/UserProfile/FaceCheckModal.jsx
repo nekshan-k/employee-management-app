@@ -215,11 +215,12 @@ export default function FaceCheckModal({ profileImg, mode, userId, onSuccess, on
       const lat = (coordinatesLatLon && coordinatesLatLon.lat) || (coordinates && coordinates.lat) || 0;
       const lon = (coordinatesLatLon && coordinatesLatLon.lon) || (coordinates && coordinates.lon) || 0;
       const payload = { attendanceType: mode || "CHECK_IN", latitude: lat, longitude: lon, file };
+      console.log("payload", payload);
       const resp = await submitAttendanceAction(payload);
       if (resp?.data?.success) {
         intervals.current.forEach(i => clearInterval(i));
         stopCamera();
-        toast.success(resp.data.message || "Attendance submitted");
+        // toast.success(resp.data.message || "Attendance submitted");
         onSuccess({ type: mode, coordinates: coordinatesLatLon || coordinates || null, captured, distance });
         return;
       } else {

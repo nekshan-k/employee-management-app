@@ -6,79 +6,183 @@ import ProfileHeader from "./userProfileComps/ProfileHeader";
 import StatsGrid from "./userProfileComps/StatsGrid";
 import Controls from "./userProfileComps/Controls";
 import { toast } from "react-toastify";
+import { getUserProfile, uploadUserProfilePhoto, getUserTodayAttendance } from "../../../api/ApiCalls";
+import CustomToast from "../../ui/Toast/CustomToast";
 
 const GEO_FENCE = { lat: 32.69780167134704, lon: 74.86921071534209, radiusMeters: 500 };
-const STANDARD_START_HOUR = 12;
-const WORK_HOURS = 8;
 const BREAK_MINUTES = 30;
 
-function haversineDistance(lat1, lon1, lat2, lon2) {
+const haversineDistance = (lat1, lon1, lat2, lon2) => {
   const toRad = x => (x * Math.PI) / 180;
   const R = 6371000;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+};
 
-function formatDuration(ms) {
-  const totalSec = Math.floor(ms / 1000);
-  const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
-  const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
-  const s = String(totalSec % 60).padStart(2, "0");
-  return `${h}:${m}:${s}`;
-}
-
-async function readFileAsDataURL(file) {
-  return await new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
+const formatDuration = ms => {
+  const s = Math.floor((ms || 0) / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return `${h}:${m}:${sec}`;
+};
 
 export default function UserProfile() {
-  const storeUser = useSelector(state => state.auth.user);
+  const storeUser = useSelector(s => s.auth.user);
   const userId = storeUser?.id || 0;
 
-  const [profileImg, setProfileImg] = useState(sessionStorage.getItem("profileImg") || "");
+  const [profile, setProfile] = useState(null);
+  const [profileImg, setProfileImg] = useState("");
   const [modalMode, setModalMode] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const [status, setStatus] = useState(
-    JSON.parse(sessionStorage.getItem("attendanceStatus")) || {
-      checkedIn: false,
-      checkedInAt: null,
-      checkedOutAt: null,
-      breakUsedMs: 0,
-      breakSessionStart: null,
-      checkInLatLng: null,
-      checkOutLatLng: null,
-      totalWorkedMs: 0
-    }
-  );
+  const [status, setStatus] = useState({
+    checkedIn: false,
+    checkedInAt: null,
+    checkedOutAt: null,
+    breakUsedMs: 0,
+    breakSessionStart: null,
+    checkInLatLng: null,
+    checkOutLatLng: null,
+    totalWorkedMs: 0,
+    halfDay: false
+  });
 
   const [userLatLng, setUserLatLng] = useState(null);
   const [geoAllowed, setGeoAllowed] = useState(false);
   const [geoPermission, setGeoPermission] = useState("prompt");
   const [checkingGeo, setCheckingGeo] = useState(false);
+  const [profileLocationMatch, setProfileLocationMatch] = useState(null);
+  const [profileLocationDistance, setProfileLocationDistance] = useState(null);
+
+  const parseTs = t => (t ? Date.parse(t) : null);
+
+  const computeTodayStatusFromData = data => {
+    if (!data || !Array.isArray(data.sessions) || data.sessions.length === 0) {
+      return {
+        checkedIn: false,
+        checkedInAt: null,
+        checkedOutAt: null,
+        breakUsedMs: 0,
+        breakSessionStart: null,
+        totalWorkedMs: 0,
+        halfDay: false
+      };
+    }
+
+    let totalWorkedMs = 0;
+    let totalBreakMs = 0;
+    let runningBreakStart = null;
+    let runningSessionCheckIn = null;
+    let runningSessionBreakUsedMs = 0;
+    let runningSessionFound = false;
+
+    data.sessions.forEach(s => {
+      const inTs = parseTs(s.checkIn);
+      const outTs = parseTs(s.checkOut);
+      let sessionBreakMs = 0;
+      let sessionRunningBreakStart = null;
+
+      if (Array.isArray(s.breaks) && s.breaks.length) {
+        s.breaks.forEach(b => {
+          const bs = parseTs(b.breakStartTime);
+          const be = parseTs(b.breakEndTime);
+          if (bs && be) {
+            sessionBreakMs += Math.max(0, be - bs);
+          } else if (bs && !be) {
+            sessionRunningBreakStart = bs;
+          } else if (typeof b.durationMinutes === "number") {
+            sessionBreakMs += b.durationMinutes * 60000;
+          }
+        });
+      }
+
+      if (inTs && outTs) {
+        const worked = Math.max(0, outTs - inTs - sessionBreakMs);
+        totalWorkedMs += worked;
+        totalBreakMs += sessionBreakMs;
+      } else if (inTs && !outTs) {
+        runningSessionFound = true;
+        runningSessionCheckIn = inTs;
+        runningSessionBreakUsedMs = sessionBreakMs;
+        if (sessionRunningBreakStart) runningBreakStart = sessionRunningBreakStart;
+      }
+    });
+
+  const halfDay = totalBreakMs > BREAK_MINUTES * 60000;
+
+    if (runningSessionFound) {
+      return {
+        checkedIn: true,
+        checkedInAt: runningSessionCheckIn,
+        checkedOutAt: null,
+        breakUsedMs: totalBreakMs + runningSessionBreakUsedMs,
+        breakSessionStart: runningBreakStart,
+        totalWorkedMs,
+        halfDay
+      };
+    }
+
+    return {
+      checkedIn: false,
+      checkedInAt: null,
+      checkedOutAt: null,
+      breakUsedMs: totalBreakMs,
+      breakSessionStart: null,
+      totalWorkedMs,
+      halfDay
+    };
+  };
 
   useEffect(() => {
-    sessionStorage.setItem("attendanceStatus", JSON.stringify(status));
-  }, [status]);
+    let mounted = true;
+    async function loadProfile() {
+      try {
+        const resp = await getUserProfile(userId);
+        if (!mounted) return;
+        const p = resp?.data?.data || resp?.data || null;
+        setProfile(p);
+        setProfileImg(p?.profileImageUrl || "");
+      } catch {
+        toast.error("Failed to load profile");
+      }
+    }
+    if (userId) loadProfile();
+    return () => {
+      mounted = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadToday() {
+      try {
+        const resp = await getUserTodayAttendance();
+        if (!mounted) return;
+        const d = resp?.data?.data || resp?.data || null;
+        const st = computeTodayStatusFromData(d);
+        setStatus(prev => ({ ...prev, ...st }));
+      } catch {}
+    }
+    if (userId) loadToday();
+    return () => {
+      mounted = false;
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!navigator.permissions) {
       navigator.geolocation.getCurrentPosition(
         p => {
-          const lat = p.coords.latitude;
-          const lon = p.coords.longitude;
+          const lat = p.coords.latitude,
+            lon = p.coords.longitude;
           setUserLatLng({ lat, lon });
           setGeoAllowed(haversineDistance(lat, lon, GEO_FENCE.lat, GEO_FENCE.lon) <= GEO_FENCE.radiusMeters);
           setGeoPermission("granted");
         },
-        e => {
+        () => {
           setGeoPermission("denied");
           setGeoAllowed(false);
         },
@@ -86,93 +190,107 @@ export default function UserProfile() {
       );
       return;
     }
-
-    let mounted = true;
-    const check = async () => {
+    let m = true;
+    (async () => {
       try {
-        const status = await navigator.permissions.query({ name: "geolocation" });
-        if (!mounted) return;
-        setGeoPermission(status.state);
-        if (status.state === "granted") {
+        const perm = await navigator.permissions.query({ name: "geolocation" });
+        if (!m) return;
+        setGeoPermission(perm.state);
+        const updatePos = () => {
           navigator.geolocation.getCurrentPosition(
             p => {
-              if (!mounted) return;
-              const lat = p.coords.latitude;
-              const lon = p.coords.longitude;
+              if (!m) return;
+              const lat = p.coords.latitude,
+                lon = p.coords.longitude;
               setUserLatLng({ lat, lon });
               setGeoAllowed(haversineDistance(lat, lon, GEO_FENCE.lat, GEO_FENCE.lon) <= GEO_FENCE.radiusMeters);
             },
             () => {
-              if (!mounted) return;
+              if (!m) return;
               setGeoAllowed(false);
             },
             { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
           );
-        }
-        status.onchange = () => {
-          if (!mounted) return;
-          setGeoPermission(status.state);
-          if (status.state === "granted") {
-            navigator.geolocation.getCurrentPosition(
-              p => {
-                if (!mounted) return;
-                const lat = p.coords.latitude;
-                const lon = p.coords.longitude;
-                setUserLatLng({ lat, lon });
-                setGeoAllowed(haversineDistance(lat, lon, GEO_FENCE.lat, GEO_FENCE.lon) <= GEO_FENCE.radiusMeters);
-              },
-              () => {
-                if (!mounted) return;
-                setGeoAllowed(false);
-              },
-              { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
-            );
-          }
+        };
+        if (perm.state === "granted") updatePos();
+        perm.onchange = () => {
+          if (!m) return;
+          setGeoPermission(perm.state);
+          if (perm.state === "granted") updatePos();
         };
       } catch {
         setGeoPermission("prompt");
       }
-    };
-    check();
+    })();
     return () => {
-      mounted = false;
+      m = false;
     };
   }, []);
 
-  const demoUser = {
-    name: sessionStorage.getItem("fullName") || storeUser?.fullName || "N/A",
-    employeeId: sessionStorage.getItem("employeeCode") || "EMP-000",
-    designation: sessionStorage.getItem("designation") || "N/A",
-    email: sessionStorage.getItem("email") || "",
-    roleName: sessionStorage.getItem("roleName") || "",
-    organizationName: sessionStorage.getItem("organizationName") || "",
-    dateOfJoining: sessionStorage.getItem("dateOfJoining") || ""
+  useEffect(() => {
+    const prof = profile;
+    const user = userLatLng;
+    if (!prof || !user) return;
+    const plat = Number(prof.latitude || prof.lat || 0);
+    const plon = Number(prof.longitude || prof.lon || prof.lng || 0);
+    const dist = haversineDistance(user.lat, user.lon, plat, plon);
+    setProfileLocationDistance(dist);
+    setProfileLocationMatch(dist <= (prof.locationRadiusMeters || 500));
+    console.log("PROFILE LOCATION FROM API ->", { profileLatitude: plat, profileLongitude: plon });
+    console.log("BROWSER LOCATION ->", user);
+    console.log("DISTANCE METERS ->", dist);
+    console.log("MATCH ->", dist <= (prof.locationRadiusMeters || 500));
+  }, [profile, userLatLng]);
+
+  const refreshProfileAndToday = async () => {
+    try {
+      const [pResp, tResp] = await Promise.allSettled([getUserProfile(userId), getUserTodayAttendance()]);
+      if (pResp.status === "fulfilled") {
+        const p = pResp.value?.data?.data || pResp.value?.data || null;
+        setProfile(p);
+        setProfileImg(p?.profileImageUrl || "");
+      }
+      if (tResp.status === "fulfilled") {
+        const d = tResp.value?.data?.data || tResp.value?.data || null;
+        const st = computeTodayStatusFromData(d);
+        setStatus(prev => ({ ...prev, ...st }));
+      }
+    } catch {}
   };
 
   const handleUpload = async e => {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sendObj = { userId, fileName: file.name, fileType: file.type, fileSize: file.size };
+    console.log("SEND OBJECT ->", sendObj);
+    const form = new FormData();
+    form.append("file", file);
+    for (const entry of form.entries()) console.log("FORM ENTRY ->", entry[0], entry[1]);
     try {
-      const dataUrl = await readFileAsDataURL(f);
-      setProfileImg(dataUrl);
-      sessionStorage.setItem("profileImg", dataUrl);
-      toast.success("Image saved");
+      const resp = await uploadUserProfilePhoto(userId, form);
+      console.log("UPLOAD RESPONSE ->", resp);
+      const url = resp?.data?.data?.profileImageUrl || resp?.data?.profileImageUrl || "";
+      setProfileImg(url);
+      setProfile(prev => (prev ? { ...prev, profileImageUrl: url } : { profileImageUrl: url }));
+      toast.success("Profile photo updated");
+      await refreshProfileAndToday();
     } catch (err) {
-      toast.error(err?.message || "Failed to read file");
+      console.log("UPLOAD ERROR ->", err?.response || err);
+      toast.error("Upload failed");
     }
   };
 
   const clearProfile = () => {
-    sessionStorage.removeItem("profileImg");
     setProfileImg("");
+    setProfile(prev => (prev ? { ...prev, profileImageUrl: "" } : prev));
   };
 
   const getFastPosition = () =>
-    new Promise((resolve, reject) => {
-      if (!navigator.geolocation) return reject(new Error("no-geo"));
+    new Promise((res, rej) => {
+      if (!navigator.geolocation) return rej(new Error("no-geo"));
       navigator.geolocation.getCurrentPosition(
-        pos => resolve(pos.coords),
-        err => reject(err),
+        pos => res(pos.coords),
+        err => rej(err),
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 5000 }
       );
     });
@@ -185,37 +303,31 @@ export default function UserProfile() {
     setCheckingGeo(true);
     try {
       const coords = await getFastPosition();
-      const lat = coords.latitude;
-      const lon = coords.longitude;
+      const lat = coords.latitude,
+        lon = coords.longitude;
       setUserLatLng({ lat, lon });
       const withinFence = haversineDistance(lat, lon, GEO_FENCE.lat, GEO_FENCE.lon) <= GEO_FENCE.radiusMeters;
       if (!withinFence) {
         toast.error("You are outside the allowed location");
         return;
       }
-      const modeMap = {
-        checkin: "CHECK_IN",
-        checkout: "CHECK_OUT",
-        startBreak: "BREAK_IN",
-        endBreak: "BREAK_OUT",
-        CHECK_IN: "CHECK_IN",
-        CHECK_OUT: "CHECK_OUT",
-        BREAK_IN: "BREAK_IN",
-        BREAK_OUT: "BREAK_OUT"
-      };
-      const normalizedMode = modeMap[requestedMode] || String(requestedMode).toUpperCase();
-      setModalMode({ mode: normalizedMode, coordinates: { lat, lon } });
+      const map = { checkin: "CHECK_IN", checkout: "CHECK_OUT", startBreak: "BREAK_IN", endBreak: "BREAK_OUT" };
+      const normalized = map[requestedMode] || String(requestedMode).toUpperCase();
+      setModalMode({ mode: normalized, coordinates: { lat, lon } });
       setModalOpen(true);
-    } catch (err) {
+    } catch {
       toast.error("Unable to determine location quickly. Ensure location is enabled.");
     } finally {
       setCheckingGeo(false);
     }
   };
 
-  const closeModal = () => {
+  const closeModal = async () => {
     setModalOpen(false);
     setModalMode(null);
+    try {
+      await refreshProfileAndToday();
+    } catch {}
   };
 
   const onVerified = payload => {
@@ -232,7 +344,8 @@ export default function UserProfile() {
       }));
       toast.success("Checked in");
     } else if (payload.type === "CHECK_OUT") {
-      const worked = status.checkedInAt ? now - status.checkedInAt - status.breakUsedMs : 0;
+      const start = status.checkedInAt || now;
+      const worked = Math.max(0, now - start - (status.breakUsedMs || 0));
       setStatus(p => ({
         ...p,
         checkedIn: false,
@@ -259,11 +372,10 @@ export default function UserProfile() {
   const breakUsedMs = status.breakUsedMs || 0;
   const breakRemainingMs = Math.max(0, BREAK_MINUTES * 60000 - breakUsedMs);
   const workingTimeMs =
-    status.checkedInAt && !status.checkedOutAt
-      ? Date.now() - status.checkedInAt - breakUsedMs
-      : 0;
+    status.checkedInAt && !status.checkedOutAt ? Date.now() - status.checkedInAt - breakUsedMs : 0;
 
   const attendanceState = (() => {
+    if (status.halfDay) return "Half day";
     if (status.breakSessionStart && status.checkedIn && !status.checkedOutAt) return "On break";
     if (!status.checkedIn) return "Not checked in";
     if (status.checkedIn && !status.checkedOutAt) return "Working";
@@ -272,14 +384,35 @@ export default function UserProfile() {
 
   return (
     <div className="min-h-screen flex justify-center bg-primary50 px-4 py-6">
+      <CustomToast />
       <div className="w-full max-w-5xl space-y-5">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-primary500">Attendance Desk</h1>
-            <p className="text-xs text-foundation-neurtal-neurtal-500">Face and location-based check-in for {demoUser.name}</p>
+            <p className="text-xs text-foundation-neurtal-neurtal-500">
+              Face and location-based check-in for {profile?.fullName || storeUser?.fullName || "N/A"}
+            </p>
+            {profile && profile.latitude != null && profile.longitude != null && (
+              <div className="text-[11px] text-neutral400 mt-1">
+                Profile location: {Number(profile.latitude || profile.lat || 0).toFixed(5)},{" "}
+                {Number(profile.longitude || profile.lon || profile.lng || 0).toFixed(5)} • Distance:{" "}
+                {profileLocationDistance != null ? Math.round(profileLocationDistance) + "m" : "-"} • Match:{" "}
+                {profileLocationMatch ? "Yes" : "No"}
+              </div>
+            )}
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-xs rounded-full px-3 py-1 border bg-white">
-            <span className={`h-2 w-2 rounded-full ${attendanceState === "Working" ? "bg-emerald-500" : attendanceState === "On break" ? "bg-amber-500" : attendanceState === "Checked out" ? "bg-foundation-neurtal-neurtal-400" : "bg-amber-500"}`} />
+          <div className="hidden sm:flex items-center gap-2 text-xs rounded-full px-3 py-1 border border-primary200 bg-white">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                attendanceState === "Working"
+                  ? "bg-emerald-500"
+                  : attendanceState === "On break"
+                  ? "bg-amber-500"
+                  : attendanceState === "Checked out"
+                  ? "bg-foundation-neurtal-neurtal-400"
+                  : "bg-amber-500"
+              }`}
+            />
             <span>{attendanceState}</span>
           </div>
         </div>
@@ -290,10 +423,15 @@ export default function UserProfile() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl border p-5 space-y-5">
+        <div className="bg-white rounded-2xl shadow-lg p-5 space-y-5">
           <ProfileHeader
-            demoUser={demoUser}
-            profileImg={profileImg}
+            demoUser={{
+              name: profile?.fullName || storeUser?.fullName || "N/A",
+              employeeId: profile?.employeeCode || "EMP-000",
+              designation: profile?.designation || "N/A",
+              email: profile?.email || ""
+            }}
+            profileImg={profileImg || profile?.profileImageUrl || ""}
             attendanceState={attendanceState}
             userLatLng={userLatLng}
             geoAllowed={geoAllowed}
@@ -303,7 +441,15 @@ export default function UserProfile() {
           />
 
           <StatsGrid
-            status={status}
+            status={{
+              ...status,
+              workingTimeText: formatDuration(workingTimeMs),
+              totalWorkedText,
+              breakUsedText: formatDuration(breakUsedMs),
+              breakSessionStart: status.breakSessionStart
+                ? new Date(status.breakSessionStart).toISOString()
+                : null
+            }}
             workingTimeMs={workingTimeMs}
             workingTimeText={formatDuration(workingTimeMs)}
             breakUsedMs={breakUsedMs}
@@ -315,7 +461,7 @@ export default function UserProfile() {
 
           <Controls
             status={status}
-            profileImg={profileImg}
+            profileImg={profileImg || profile?.profileImageUrl || ""}
             geoAllowed={geoAllowed}
             breakUsedMs={breakUsedMs}
             openModal={openModal}
@@ -335,7 +481,7 @@ export default function UserProfile() {
 
       {modalOpen && modalMode && (
         <FaceCheckModal
-          profileImg={profileImg}
+          profileImg={profileImg || profile?.profileImageUrl || ""}
           userId={userId}
           mode={modalMode.mode}
           coordinatesLatLon={modalMode.coordinates}

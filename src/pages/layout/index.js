@@ -8,7 +8,7 @@ export default function Layout() {
       <Header />
       <div className="flex flex-grow overflow-hidden">
         <Sidebar />
-        <main className="flex-grow overflow-y-auto w-full py-12 px-6">
+        <main className="flex-grow overflow-y-auto w-full bg-primary50 py-12 px-6">
           <Outlet />
         </main>
       </div>

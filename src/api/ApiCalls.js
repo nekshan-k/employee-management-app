@@ -1,20 +1,23 @@
-import { apiClient1, apiClient2 } from "./apiClient"
+import { apiClient1 } from "./apiClient"
 
 export const loginApi = payload => apiClient1.post("/auth/login", payload)
 
 export const getProfile = () => apiClient1.get("/user/profile")
 
-export const uploadAttendancePic = ({ Imgid, userid, file }) => {
+export const uploadAttendancePic = ({ userid, file }) => {
   const form = new FormData()
   form.append("photo", file, file.name)
   form.append("photoContentType", file.type || "image/jpeg")
   form.append("photoFileName", file.name || "upload.jpg")
   return apiClient1.post("/attendance/picture", form, {
-    params: { Imgid, UserId: userid },
+    params: { UserId: userid },
     headers: { "Content-Type": "multipart/form-data" }
   })
 }
 
+export const uploadUserProfilePhoto = (userId, form) => {
+  return apiClient1.post(`/users/${userId}/profile-photo`, form)
+}
 export const submitAttendance = (userId, latitude, longitude, attendenceType, payload) => {
   const params = new URLSearchParams()
   if (userId !== undefined && userId !== null) params.append("userId", String(userId))
@@ -23,8 +26,10 @@ export const submitAttendance = (userId, latitude, longitude, attendenceType, pa
   if (attendenceType !== undefined && attendenceType !== null) params.append("attendenceType", String(attendenceType))
   return apiClient1.post(`/attendance/attendence?${params.toString()}`, payload)
 }
+export const getUserTodayAttendance = () => apiClient1.get("/attendance/today")
 
-export const getUserProfile = userId => apiClient1.get(`/users/${userId}`)
+
+export const getUserProfile = id => apiClient1.get(`/users/${id}`)
 
 export const submitAttendanceAction = ({ attendanceType, latitude, longitude, file }) => {
   const form = new FormData()
@@ -32,7 +37,7 @@ export const submitAttendanceAction = ({ attendanceType, latitude, longitude, fi
   if (latitude !== undefined && latitude !== null) form.append("latitude", String(latitude))
   if (longitude !== undefined && longitude !== null) form.append("longitude", String(longitude))
   if (file) form.append("file", file, file.name)
-  return apiClient2.post("/attendance/action", form, {
+  return apiClient1.post("/attendance/action", form, {
     headers: { "Content-Type": "multipart/form-data" }
   })
 }
@@ -40,9 +45,9 @@ export const submitAttendanceAction = ({ attendanceType, latitude, longitude, fi
 
 // LEAVES AND HOLIDAYS
 
-export const getNationalHolidays = () => apiClient1.get("/national-holidays/getall")
+export const getNationalHolidays = () => apiClient1.get("/holidays")
 
 export const getAttendanceHistory = (userId, from, to) =>
-  apiClient2.get(`/attendance/${userId}/history`, {
+  apiClient1.get(`/attendance/${userId}/history`, {
     params: { from, to }
   });

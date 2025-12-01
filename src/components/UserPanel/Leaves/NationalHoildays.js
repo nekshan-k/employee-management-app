@@ -28,11 +28,11 @@ const employeeDayEvents = [
     punches: [
       { time: "12:26", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-In" },
       { time: "15:06", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-Out" },
-      { time: "15:24", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-In" },
-    ],
+      { time: "15:24", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-In" }
+    ]
   },
   { date: "2025-11-25", type: "half-present", label: "0.5 day Present (Desktop)", hours: "06:47" },
-  { date: "2025-11-25", type: "absent", label: "0.5 day Absent" },
+  { date: "2025-11-25", type: "absent", label: "0.5 day Absent" }
 ];
 
 export default function NationalHolidays({ view = "calendar" }) {
@@ -45,13 +45,14 @@ export default function NationalHolidays({ view = "calendar" }) {
       setLoading(true);
       try {
         const resp = await getNationalHolidays();
+        console.log("res", resp);
         if (!mounted) return;
-        const data = Array.isArray(resp?.data) ? resp.data : resp || [];
-        const mapped = data.map(h => ({
+        const raw = Array.isArray(resp?.data?.data) ? resp.data.data : Array.isArray(resp?.data) ? resp.data : [];
+        const mapped = raw.map(h => ({
           date: h.date,
           type: "holiday",
-          label: h.name || h.description || "Holiday",
-          meta: { location: h.location, description: h.description },
+          label: h.title || h.name || h.description || "Holiday",
+          meta: { description: h.description, recurring: h.recurring, organizationId: h.organizationId }
         }));
         setNationalEvents(mapped);
       } catch (err) {
@@ -82,7 +83,7 @@ export default function NationalHolidays({ view = "calendar" }) {
         { label: "Present", dotClassName: "bg-bgGreen" },
         { label: "0.5 day partial", dotClassName: "bg-secondary300" },
         { label: "Absent", dotClassName: "bg-firebrick" },
-        { label: "Today", dotClassName: "bg-selected" },
+        { label: "Today", dotClassName: "bg-selected" }
       ]}
       highlightWeekends
       loading={loading}
