@@ -1,10 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useSelector } from "react-redux";
 import {
   AdminEmptyIcon,
   AdminFilledIcon,
-  AttendenceEmptyIcon,
-  AttendenceFilledIcon,
   LandHEmptyIcon,
   LAndHFilledIcon,
   ProfileEmptyIcon,
@@ -12,12 +10,6 @@ import {
 } from "../../components/ui/icons";
 
 const menu = [
-  // {
-  //   label: "Dashboard",
-  //   path: "/dashboard",
-  //   filledIcon: ProfileFilledIcon,
-  //   outlineIcon: ProfileEmptyIcon,
-  // },
   {
     label: "Profile",
     path: "/userProfile",
@@ -33,11 +25,11 @@ const menu = [
 ];
 
 export default function Sidebar() {
-  const { role } = useAuth();
+  const roleName = useSelector(state => state.auth.user?.roleName);
   const location = useLocation();
-
+console.log("roleName", roleName);
   const fullMenu =
-    role === "admin"
+    roleName === "ADMIN"
       ? [
           ...menu,
           {
@@ -51,12 +43,11 @@ export default function Sidebar() {
 
   const isActiveSidebar = path =>
     location.pathname === path ||
-    (path === "/dashboard" &&
-      (location.pathname === "/" || location.pathname === "/dashboard"));
+    (path === "/userProfile" &&
+      (location.pathname === "/" || location.pathname === "/userProfile"));
 
   return (
     <aside className="h-screen w-24 border-r border-r-neutral100 shadow-sidebar py-6 px-2 hidden md:flex md:flex-col items-center bg-white">
-    
       <nav className="flex-1 flex flex-col items-center gap-3 mt-12">
         {fullMenu.map(m => {
           const IconComponent = isActiveSidebar(m.path)
@@ -73,7 +64,6 @@ export default function Sidebar() {
                   ? "bg-primary500 font-bold text-white"
                   : "text-primary500 font-bold hover:bg-primary50")
               }
-              end={m.path === "/dashboard"}
             >
               <span className="flex items-center justify-center h-6 w-6 mb-1">
                 <IconComponent />

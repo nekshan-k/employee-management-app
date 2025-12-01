@@ -1,20 +1,8 @@
-import { Navigate } from "react-router-dom";
-import { useAuth } from "./context/AuthContext";
+import { useSelector } from "react-redux";
+import { Navigate, Outlet } from "react-router-dom";
 
-export default function ProtectedRoute({ children }) {
-  const { user, isAuthenticated } = useAuth();
-  console.log("ProtectedRoute - checking access:", user, isAuthenticated());
-
-  if (!isAuthenticated()) {
-    console.log("ProtectedRoute - no token, redirecting to /login");
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!user) {
-    console.log("ProtectedRoute - user not loaded yet");
-    return null;
-  }
-
-  console.log("ProtectedRoute - access granted");
-  return children;
+export default function ProtectedRoute() {
+  const isAuthenticated = useSelector(state => state.auth.isAuthenticated);
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <Outlet />;
 }

@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { FaEye, FaEyeSlash } from "react-icons/fa";
-
+import { FiEye, FiEyeOff } from "react-icons/fi";
 export default function InputField({ label, type = "text", value, onChange, name, showEye, style, ...rest }) {
   const [visible, setVisible] = useState(false);
   const isPassword = type === "password";
@@ -18,11 +17,11 @@ export default function InputField({ label, type = "text", value, onChange, name
       />
       {isPassword && showEye && (
         <button type="button"
-          className="absolute right-3 bottom-[10px] text-gray-400"
+          className="absolute top-1/2 right-3 sm:right-4 -translate-y-1/2 cursor-pointer text-neutral200"
           tabIndex={-1}
           onClick={() => setVisible(v => !v)}
         >
-          {visible ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
+          {visible ? <FiEye size={18} /> : <FiEyeOff size={18} />}
         </button>
       )}
     </div>

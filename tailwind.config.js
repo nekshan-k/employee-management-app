@@ -53,6 +53,7 @@ module.exports = {
   			bgGreen: '#D9FAC9',
 			tagColor: '#628D1C',
   			borderGray200: '#C7C7C7',
+			clwkedbg: 'var(--clwkedbg, var(--ylw5))',
   			'foundation-neurtal-neurtal-300': '#747272',
   			'foundation-primary-blue-color-primary-color-500': '#434487',
   			'foundation-background-color-background-color-50': '#f9f9f9',

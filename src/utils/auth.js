@@ -10,10 +10,3 @@ export function getToken() {
 export function removeToken() {
   Cookies.remove(TOKEN_KEY);
 }
-export function issueStaticToken(username, role) {
-  return (
-    btoa(
-      JSON.stringify({ username, role, iat: Date.now() })
-    ) + ".tok"
-  );
-}

@@ -1,4 +1,4 @@
-export default function Button({ children, variant = "primary", onClick, disabled, className = "" }) {
+export default function Button({ children, variant = "primary", onClick, disabled, className = "", type = "button", ...rest }) {
   const base = "px-4 py-2 rounded-lg font-medium transition shadow text-center disabled:opacity-50 disabled:cursor-not-allowed";
   const styles = {
     red: "bg-red text-white hover:bg-red",
@@ -7,12 +7,13 @@ export default function Button({ children, variant = "primary", onClick, disable
   };
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`${base} ${styles[variant]} ${className}`}
+      {...rest}
     >
       {children}
     </button>
   );
 }
- 

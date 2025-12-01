@@ -1,40 +1,59 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useSelector, useDispatch } from "react-redux";
 import { HiOutlineMenu } from "react-icons/hi";
 import MobileDrawer from "./MobileDrawer";
 import Button from "../../components/ui/buttons/Button";
 import { MdDashboard, MdPerson, MdAdminPanelSettings } from "react-icons/md";
+import { logout as logoutAction } from "../../features/auth/authSlice";
 
 const baseMenu = [
   { label: "Dashboard", path: "/dashboard", icon: <MdDashboard /> },
-  { label: "User Profile", path: "/userProfile", icon: <MdPerson /> }
+  { label: "User Profile", path: "/userProfile", icon: <MdPerson /> },
+  { label: "Leaves & Holidays", path: "/leaves", icon: <MdPerson /> }
 ];
 
 export default function Header() {
-  const { user, role, logout, isAuthenticated } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const isAuthenticated = useSelector(state => state.auth.isAuthenticated);
+  const user = useSelector(state => state.auth.user);
+  const role = useSelector(state => state.auth.user?.role || state.auth.role);
+
   useEffect(() => {
-    if (!isAuthenticated()) {
-      logout();
+    if (!isAuthenticated) {
+      dispatch(logoutAction());
       navigate("/login");
     }
-  }, [isAuthenticated, logout, navigate]);
+  }, [isAuthenticated, dispatch, navigate]);
 
   const fullMenu =
-    role === "admin"
+    role === "ADMIN" || role === "admin"
       ? [...baseMenu, { label: "Admin Panel", path: "/admin", icon: <MdAdminPanelSettings /> }]
       : baseMenu;
 
   const current = fullMenu.find(m => location.pathname.startsWith(m.path)) || fullMenu[0];
   const title = current.label;
 
+  const handleLogout = () => {
+    dispatch(logoutAction());
+    navigate("/login");
+  };
+
+  const avatarLetter =
+    (user?.fullName && user.fullName[0]) ||
+    (user?.email && user.email[0]) ||
+    (user?.username && user.username[0]) ||
+    "G";
+
+  const displayName = user?.fullName || user?.email || user?.username || "Guest";
+
   return (
     <header className="relative w-full bg-white flex items-center justify-between py-4 px-6">
- <div className="absolute bottom-0 right-0 left-0 md:left-[92px] h-[1px] bg-neutral50 md:rounded-bl-xl" />
+      <div className="absolute bottom-0 right-0 left-0 md:left-[92px] h-[1px] bg-neutral50 md:rounded-bl-xl" />
 
       <button onClick={() => setDrawerOpen(true)} className="md:hidden p-2">
         <HiOutlineMenu className="w-6 h-6 text-primary600" />
@@ -53,15 +72,12 @@ export default function Header() {
 
       <div className="hidden md:flex items-center gap-4">
         <div className="w-10 h-10 bg-primary500 rounded-full flex items-center justify-center text-white text-lg">
-          {user?.username?.[0]?.toUpperCase() || "G"}
+          {avatarLetter.toUpperCase()}
         </div>
-        <div className="text-sm text-primary600">{user?.username || "Guest"}</div>
+        <div className="text-sm text-primary600">{displayName}</div>
         <Button
           variant="red"
-          onClick={() => {
-            logout();
-            navigate("/login");
-          }}
+          onClick={handleLogout}
         >
           Logout
         </Button>
@@ -72,10 +88,7 @@ export default function Header() {
         onClose={() => setDrawerOpen(false)}
         user={user}
         menu={fullMenu}
-        onLogout={() => {
-          logout();
-          navigate("/login");
-        }}
+        onLogout={handleLogout}
       />
     </header>
   );
