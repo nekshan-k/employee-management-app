@@ -21,7 +21,7 @@ export default function Header() {
 
   const isAuthenticated = useSelector(state => state.auth.isAuthenticated);
   const user = useSelector(state => state.auth.user);
-  const role = useSelector(state => state.auth.user?.role || state.auth.role);
+  const roleName = useSelector(state => state.auth.user?.roleName);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -31,7 +31,7 @@ export default function Header() {
   }, [isAuthenticated, dispatch, navigate]);
 
   const fullMenu =
-    role === "ADMIN" || role === "admin"
+    roleName === "ADMIN"
       ? [...baseMenu, { label: "Admin Panel", path: "/admin", icon: <MdAdminPanelSettings /> }]
       : baseMenu;
 
@@ -49,7 +49,11 @@ export default function Header() {
     (user?.username && user.username[0]) ||
     "G";
 
-  const displayName = user?.fullName || user?.email || user?.username || "Guest";
+  const displayName =
+    user?.fullName ||
+    user?.email ||
+    user?.username ||
+    "Guest";
 
   return (
     <header className="relative w-full bg-white flex items-center justify-between py-4 px-6">
@@ -75,10 +79,7 @@ export default function Header() {
           {avatarLetter.toUpperCase()}
         </div>
         <div className="text-sm text-primary600">{displayName}</div>
-        <Button
-          variant="red"
-          onClick={handleLogout}
-        >
+        <Button variant="red" onClick={handleLogout}>
           Logout
         </Button>
       </div>

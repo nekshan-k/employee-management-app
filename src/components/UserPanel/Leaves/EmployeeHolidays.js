@@ -1,32 +1,43 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import StatCard from "./EmplLeaveComponent/StatCard";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import StatCard from "./EmplLeaveComponent/StatCard";
 import {
   getLaveBalance,
   getNationalHolidays,
   getLaveHistoryByUserId,
-  ApplyLeave,
+  ApplyLeave
 } from "../../../api/ApiCalls";
 import LeaveSummaryBar from "./EmployeeHolidaysComp/LeaveSummaryBar";
 import AbsentList from "./EmployeeHolidaysComp/AbsentList";
 import HistorySection from "./EmployeeHolidaysComp/HistorySection";
 import LeaveApplyForm from "./EmployeeHolidaysComp/LeaveApplyForm";
 import SidePanel from "../../ui/SidePanel";
+import StatusBadge from "../../ui/StatusBadge";
 
 export default function EmployeeHolidays() {
-  const storeUser = useSelector((s) => s.auth.user);
+  const storeUser = useSelector(s => s.auth.user);
   const userId = storeUser?.id || 0;
   const employmentType = (storeUser?.employmentType || "CONFIRMED").toUpperCase();
 
   const today = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const monthStart = useMemo(() => new Date(currentYear, currentMonth, 1), [currentYear, currentMonth]);
-  const monthEnd = useMemo(() => new Date(currentYear, currentMonth + 1, 0), [currentYear, currentMonth]);
+  const monthStart = useMemo(
+    () => new Date(currentYear, currentMonth, 1),
+    [currentYear, currentMonth]
+  );
+  const monthEnd = useMemo(
+    () => new Date(currentYear, currentMonth + 1, 0),
+    [currentYear, currentMonth]
+  );
   const monthLabel = useMemo(
-    () => monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    () =>
+      monthStart.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric"
+      }),
     [monthStart]
   );
 
@@ -49,26 +60,35 @@ export default function EmployeeHolidays() {
         const [balanceRes, holidaysRes, historyRes] = await Promise.all([
           getLaveBalance(userId),
           getNationalHolidays(),
-          getLaveHistoryByUserId(userId),
+          getLaveHistoryByUserId(userId)
         ]);
 
         if (balanceRes.data?.success) setLeaveBalance(balanceRes.data.data);
         if (holidaysRes.data?.success) setNationalHolidays(holidaysRes.data.data);
         if (historyRes.data?.success) setLeaveHistory(historyRes.data.data);
 
-        const currentMonthAbsents = (historyRes.data?.data || []).filter((entry) => {
+        const history = historyRes.data?.data || [];
+
+        const currentMonthAbsents = history.filter(entry => {
           const entryDate = new Date(entry.startDate || entry.date || entry.workDate);
           const inMonth = entryDate >= monthStart && entryDate <= monthEnd;
-          const isLeaveRecord =
-            !!entry.leaveType || entry.type === "Leave" || (entry.leaveType && ["APPROVED", "PENDING", "REJECTED"].includes(entry.status));
-          return inMonth && !isLeaveRecord && entry.status === "PENDING";
+          const isPendingLeave = entry.leaveType && entry.status === "PENDING";
+          const isPureAbsent =
+            !entry.leaveType &&
+            entry.type !== "Leave" &&
+            entry.status === "PENDING";
+          return inMonth && (isPendingLeave || isPureAbsent);
         });
 
         setAbsents(currentMonthAbsents);
 
-        const usedApproved = (historyRes.data?.data || []).filter((leave) => {
+        const usedApproved = history.filter(leave => {
           const leaveDate = new Date(leave.startDate || leave.date || leave.workDate);
-          return leaveDate >= monthStart && leaveDate <= monthEnd && leave.status === "APPROVED";
+          return (
+            leaveDate >= monthStart &&
+            leaveDate <= monthEnd &&
+            leave.status === "APPROVED"
+          );
         }).length;
 
         setUsedThisMonth(usedApproved);
@@ -86,44 +106,62 @@ export default function EmployeeHolidays() {
   }, [leaveBalance]);
 
   const upcomingItems = useMemo(() => {
-    const upcomingHolidays = nationalHolidays.filter((h) => {
+    const upcomingHolidays = nationalHolidays.filter(h => {
       const d = new Date(h.date);
       return d >= monthStart && d <= monthEnd;
     });
 
-    const upcomingLeaves = leaveHistory.filter((l) => {
+    const upcomingLeaves = leaveHistory.filter(l => {
       const d = new Date(l.startDate || l.date || l.workDate);
-      return d > today && d <= monthEnd && l.status === "APPROVED";
+      return d > today && d <= monthEnd;
     });
 
     return [
-      ...upcomingHolidays.map((h) => ({ ...h, type: "Holiday", date: h.date })),
-      ...upcomingLeaves.map((l) => ({ ...l, type: "Leave", date: l.startDate || l.date })),
+      ...upcomingHolidays.map(h => ({ ...h, type: "Holiday", date: h.date })),
+      ...upcomingLeaves.map(l => ({
+        ...l,
+        type: "Leave",
+        date: l.startDate || l.date
+      }))
     ];
   }, [nationalHolidays, leaveHistory, monthStart, monthEnd, today]);
 
   const pastItems = useMemo(() => {
-    const pastHolidays = nationalHolidays.filter((h) => {
+    const pastHolidays = nationalHolidays.filter(h => {
       const d = new Date(h.date);
       return d >= monthStart && d < today;
     });
 
-    const pastLeaves = leaveHistory.filter((l) => {
+    const pastLeaves = leaveHistory.filter(l => {
       const d = new Date(l.startDate || l.date || l.workDate);
       return d >= monthStart && d < today;
     });
 
     return [
-      ...pastHolidays.map((h) => ({ ...h, type: "Holiday", date: h.date })),
-      ...pastLeaves,
+      ...pastHolidays.map(h => ({ ...h, type: "Holiday", date: h.date })),
+      ...pastLeaves
     ];
   }, [nationalHolidays, leaveHistory, monthStart, today]);
 
-  const historyRows = viewFilter === "upcoming" ? upcomingItems : pastItems;
+  const historyRowsRaw = viewFilter === "upcoming" ? upcomingItems : pastItems;
 
-  const handleFormChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const historyRows = historyRowsRaw.map(row => {
+    if (!row.leaveType) return row;
+    let badge;
+    if (row.status === "APPROVED") {
+      badge = <StatusBadge type="ACTIVE" label="Approved" />;
+    } else if (row.status === "REJECTED") {
+      badge = <StatusBadge type="DELETED" label="Rejected" />;
+    } else if (row.status === "PENDING") {
+      badge = <StatusBadge type="INACTIVE" label="Pending" />;
+    }
+    return { ...row, statusBadge: badge };
+  });
 
-  const handleApplySubmit = async (e) => {
+  const handleFormChange = e =>
+    setForm(p => ({ ...p, [e.target.name]: e.target.value }));
+
+  const handleApplySubmit = async e => {
     e.preventDefault();
     if (!form.from || !form.to || !form.reason || !form.type) return;
     try {
@@ -131,10 +169,10 @@ export default function EmployeeHolidays() {
         startDate: form.from,
         endDate: form.to,
         reason: form.reason,
-        leaveType: form.type,
+        leaveType: form.type
       });
       toast.success("Leave application submitted successfully");
-      setUsedThisMonth((u) => u + 1);
+      setUsedThisMonth(u => u + 1);
       setForm({ from: "", to: "", type: "", reason: "" });
       setSelectedAbsent(null);
       setPanelOpen(false);
@@ -149,13 +187,14 @@ export default function EmployeeHolidays() {
     setPanelOpen(true);
   };
 
-  const openFormForAbsent = (row) => {
+  const openFormForAbsent = row => {
+    if (row.isPendingLeave) return;
     setSelectedAbsent(row);
     setForm({
       from: row.startDate || row.date,
       to: row.startDate || row.date,
       type: "",
-      reason: "",
+      reason: ""
     });
     setPanelOpen(true);
   };
@@ -163,7 +202,7 @@ export default function EmployeeHolidays() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary600" />
       </div>
     );
   }
@@ -171,13 +210,49 @@ export default function EmployeeHolidays() {
   const totalAbsentDays = absents.reduce((s, r) => s + (r.days || 1), 0);
 
   const statCards = [
-    { title: "Total Leaves", badge: null, available: leaveBalance?.totalLeaves || "0", booked: leaveBalance?.usedLeaves || "0" },
-    { title: "Available", badge: "AL", available: availableLeaves, booked: leaveBalance?.pendingLeaves || "0" },
-    { title: "Pending", badge: null, available: leaveBalance?.pendingLeaves || "0", booked: "0" },
+    {
+      title: "Total Leaves",
+      badge: null,
+      available: leaveBalance?.totalLeaves || "0",
+      booked: leaveBalance?.usedLeaves || "0"
+    },
+    {
+      title: "Available",
+      badge: "AL",
+      available: availableLeaves,
+      booked: leaveBalance?.pendingLeaves || "0"
+    },
+    {
+      title: "Pending",
+      badge: null,
+      available: leaveBalance?.pendingLeaves || "0",
+      booked: "0"
+    },
     employmentType === "PROBATION"
-      ? { title: "Used Leaves", badge: null, available: leaveBalance?.usedLeaves || "0", booked: usedThisMonth }
-      : { title: employmentType === "PROBATION" ? "Probation Leaves" : "Earned Leaves", badge: null, available: employmentType === "PROBATION" ? "1" : availableLeaves, booked: usedThisMonth },
+      ? {
+          title: "Used Leaves",
+          badge: null,
+          available: leaveBalance?.usedLeaves || "0",
+          booked: usedThisMonth
+        }
+      : {
+          title:
+            employmentType === "PROBATION" ? "Probation Leaves" : "Earned Leaves",
+          badge: null,
+          available: employmentType === "PROBATION" ? "1" : availableLeaves,
+          booked: usedThisMonth
+        }
   ];
+
+  const absentListData = absents.map(a => {
+    const isPendingLeave = !!a.leaveType && a.status === "PENDING";
+    return {
+      id: a.id,
+      label: a.startDate || a.date || a.workDate,
+      days: a.days || 1,
+      isPendingLeave
+    };
+  });
 
   return (
     <>
@@ -203,20 +278,13 @@ export default function EmployeeHolidays() {
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {statCards.map((card) => (
+          {statCards.map(card => (
             <StatCard key={card.title} {...card} />
           ))}
         </div>
 
-        {absents.length > 0 && (
-          <AbsentList
-            data={absents.map((a) => ({
-              id: a.id,
-              label: new Date(a.startDate || a.date || a.workDate).toLocaleDateString(),
-              days: a.days || 1,
-            }))}
-            onApply={openFormForAbsent}
-          />
+        {absentListData.length > 0 && (
+          <AbsentList data={absentListData} onApply={openFormForAbsent} />
         )}
 
         <HistorySection

@@ -66,4 +66,20 @@ export const getAttendanceHistory = (userId, from, to) =>
     params: { from, to }
   });
 
-  export const SaveEditUser = payload => apiClient1.post("/users", payload)
+export const SaveUser = payload =>
+  apiClient1.post("/users/adduser", payload);
+
+  export const UpdateUser = (id, payload) =>
+  apiClient1.put(`/users/${id}`, payload);
+
+export const DeleteUser = id =>
+  apiClient1.delete(`/users/${id}`);
+
+export const getAllAppliedLeaves = () =>
+  apiClient1.get("/leaves/getAllUserLeaves");
+
+export const approveLeave = (id, status = "APPROVED") =>
+  apiClient1.post(`/leaves/${id}/approve`, { status });
+
+export const rejectLeave = (id, status = "REJECTED") =>
+  apiClient1.post(`/leaves/${id}/reject`, { status });

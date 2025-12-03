@@ -1,25 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { FaPlus, FaEdit, FaTrash } from "react-icons/fa";
 import Button from "../../ui/buttons/Button";
-import InputField from "../../ui/InputFields/InputField";
-import PhoneInputField from "../../ui/InputFields/PhoneInputField";
 import SidePanel from "../../ui/SidePanel";
 import ReusableTable from "../../ui/tables/ReusableTable";
-import { getAllUser, SaveEditUser } from "../../../api/ApiCalls";
+import { DeleteUser, getAllUser, SaveUser, UpdateUser } from "../../../api/ApiCalls";
+import { toast } from "react-toastify";
+import CustomToast from "../../ui/Toast/CustomToast";
+import EmployeeForm from "./EmployeeForm";
 
 const userColumns = [
-  { Header: "S No.", accessor: "serial" },
+  { Header: "Employee Code", accessor: "employeeCode" },
   { Header: "Full name", accessor: "fullName" },
   { Header: "Email", accessor: "email" },
-  { Header: "Status", accessor: "status" },
   { Header: "Phone", accessor: "phone" },
-  { Header: "Created", accessor: "created" }
+  { Header: "Role", accessor: "roleName" },
+  { Header: "Employment Type", accessor: "employmentType" }
 ];
 
 const roleOptions = [
-  { value: 0, label: "ADMIN" },
-  { value: 1, label: "HR" },
-  { value: 2, label: "EMPLOYEE" }
+  { value: 1, label: "ADMIN" },
+  { value: 2, label: "HR" },
+  { value: 3, label: "EMPLOYEE" }
 ];
 
 const employmentOptions = [
@@ -48,18 +49,19 @@ export default function AdminPanel() {
   const [form, setForm] = useState({
     id: null,
     email: "",
-    password: "",
     fullName: "",
     phone: "",
     employeeCode: "",
-    roleId: 0,
+    roleId: "",
+    roleName: "",
     orgId: 1,
     department: "",
     designation: "",
     dateOfJoining: "",
     latitude: "",
     longitude: "",
-    employmentType: "PROBATION"
+    employmentType: "",
+    profileImageUrl: ""
   });
 
   useEffect(() => {
@@ -70,17 +72,43 @@ export default function AdminPanel() {
         const resp = await getAllUser();
         if (!m) return;
         const list = resp?.data?.data || resp?.data || [];
-        const mapped = list.map((u, i) => ({
-          id: u.id,
-          serial: i + 1,
-          fullName: u.fullName || u.email || `User ${u.id}`,
-          email: u.email || "",
-          status: u.isActive ? "Active" : "Inactive",
-          phone: u.phone || "",
-          created: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "",
-          employeeCode: u.employeeCode || `EMP-${u.id}`,
-          raw: u
-        }));
+        const mapped = list.map((u, i) => {
+          const avatar = u.profileImageUrl || "";
+          const nameEl = (
+            <div className="flex items-center gap-3">
+              {avatar ? (
+                <img
+                  src={avatar}
+                  alt={u.fullName || "avatar"}
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-neutral200 flex items-center justify-center text-xs font-medium text-neutral700">
+                  {String((u.fullName || u.email || "").slice(0, 1)).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="font-medium text-sm truncate">
+                  {u.fullName || u.email || `User ${u.id}`}
+                </div>
+                <div className="text-xs text-neutral400 truncate">
+                  {u.designation || ""}
+                </div>
+              </div>
+            </div>
+          );
+          return {
+            id: u.id,
+            serial: i + 1,
+            employeeCode: u.employeeCode || `EMP-${u.id}`,
+            fullName: nameEl,
+            email: u.email || "",
+            phone: u.phone || "",
+            roleName: u.roleName || "",
+            employmentType: u.employmentType || "",
+            raw: u
+          };
+        });
         setUsers(mapped);
       } catch {
         setUsers([]);
@@ -88,7 +116,9 @@ export default function AdminPanel() {
         if (m) setLoadingUsers(false);
       }
     })();
-    return () => { m = false; };
+    return () => {
+      m = false;
+    };
   }, []);
 
   function openAdd() {
@@ -96,104 +126,161 @@ export default function AdminPanel() {
     setForm({
       id: null,
       email: "",
-      password: "",
       fullName: "",
       phone: "",
       employeeCode: "",
-      roleId: 0,
+      roleId: "",
+      roleName: "",
       orgId: 1,
       department: "",
       designation: "",
       dateOfJoining: "",
       latitude: "",
       longitude: "",
-      employmentType: "PROBATION"
+      employmentType: "",
+      profileImageUrl: ""
     });
     setPanelOpen(true);
   }
 
-  function openEdit(row) {
-    const raw = row.raw || {};
-    setEditingUser(row);
+function openEdit(row) {
+  const raw = row.raw || {};
+  const roleFromName = roleOptions.find(r => r.label === raw.roleName);
+  const roleId = roleFromName ? roleFromName.value : "";
+  const roleName = roleFromName ? roleFromName.label : "";
 
-    const roleId =
-      roleOptions.find(r => r.label === (raw.roleName || ""))?.value ?? 0;
+  setEditingUser(row);
+  setForm({
+    id: raw.id || null,
+    email: raw.email || "",
+    fullName: raw.fullName || "",
+    phone: raw.phone || "",
+    employeeCode: raw.employeeCode || "",
+    roleId,
+    roleName,
+    orgId: raw.orgId || 1,
+    department: raw.department || "",
+    designation: raw.designation || "",
+    dateOfJoining: raw.dateOfJoining || "",
+    latitude: raw.latitude ?? "",
+    longitude: raw.longitude ?? "",
+    employmentType: raw.employmentType || "",
+    profileImageUrl: raw.profileImageUrl || ""
+  });
+  setPanelOpen(true);
+}
 
-    setForm({
-      id: raw.id || null,
-      email: raw.email || "",
-      password: "",
-      fullName: raw.fullName || "",
-      phone: raw.phone || "",
-      employeeCode: raw.employeeCode || "",
-      roleId,
-      orgId: raw.orgId || 1,
-      department: raw.department || "",
-      designation: raw.designation || "",
-      dateOfJoining: raw.dateOfJoining || "",
-      latitude: raw.latitude ?? "",
-      longitude: raw.longitude ?? "",
-      employmentType: raw.employmentType || "PROBATION"
-    });
-
-    setPanelOpen(true);
-  }
-
-  function handleChange(e) {
-    const { name, value } = e.target;
+function handleChange(e) {
+  const { name, value } = e.target;
+  if (name === "roleId") {
+    const numeric = value === "" ? "" : Number(value);
+    const selected = roleOptions.find(r => r.value === numeric);
+    setForm(f => ({
+      ...f,
+      roleId: numeric,
+      roleName: selected?.label || ""
+    }));
+  } else {
     setForm(f => ({ ...f, [name]: value }));
   }
+}
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSaveWithPassword(passwordFromChild) {
     setSaving(true);
     try {
       const payload = {
         email: form.email,
-        password: form.password || undefined,
         fullName: form.fullName,
         phone: form.phone,
-        employeeCode: form.employeeCode,
-        roleId: form.roleId,
-        orgId: 1,
         department: form.department,
         designation: form.designation,
-        dateOfJoining: form.dateOfJoining || undefined,
-        latitude: Number(form.latitude) || 0,
-        longitude: Number(form.longitude) || 0,
-        employmentType: form.employmentType
+        dateOfJoining: form.dateOfJoining || null,
+        employmentType: form.employmentType,
+        employeeCode: form.employeeCode,
+        roleId: form.roleId,
+        roleName: form.roleName,
+        username: form.email,
+        isActive: true,
+        latitude: form.latitude ? Number(form.latitude) : null,
+        longitude: form.longitude ? Number(form.longitude) : null,
+        profileImageUrl: form.profileImageUrl || ""
       };
 
-      await SaveEditUser(payload);
+      if (editingUser && form.id) {
+        await UpdateUser(form.id, payload);
+        toast.success("Employee updated successfully");
+      } else {
+        const createPayload = {
+          ...payload,
+          password: passwordFromChild
+        };
+        await SaveUser(createPayload);
+        toast.success("Employee created successfully");
+      }
 
       const resp = await getAllUser();
       const list = resp?.data?.data || resp?.data || [];
-
-      const mapped = list.map((u, i) => ({
-        id: u.id,
-        serial: i + 1,
-        fullName: u.fullName || u.email || `User ${u.id}`,
-        email: u.email || "",
-        status: u.isActive ? "Active" : "Inactive",
-        phone: u.phone || "",
-        created: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "",
-        employeeCode: u.employeeCode || `EMP-${u.id}`,
-        raw: u
-      }));
+      const mapped = list.map((u, i) => {
+        const avatar = u.profileImageUrl || "";
+        const nameEl = (
+          <div className="flex items-center gap-3">
+            {avatar ? (
+              <img
+                src={avatar}
+                alt={u.fullName || "avatar"}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-neutral200 flex items-center justify-center text-xs font-medium text-neutral700">
+                {String((u.fullName || u.email || "").slice(0, 1)).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="font-medium text-sm truncate">
+                {u.fullName || u.email || `User ${u.id}`}
+              </div>
+              <div className="text-xs text-neutral400 truncate">
+                {u.designation || ""}
+              </div>
+            </div>
+          </div>
+        );
+        return {
+          id: u.id,
+          serial: i + 1,
+          employeeCode: u.employeeCode || `EMP-${u.id}`,
+          fullName: nameEl,
+          email: u.email || "",
+          phone: u.phone || "",
+          roleName: u.roleName || "",
+          employmentType: u.employmentType || "",
+          raw: u
+        };
+      });
 
       setUsers(mapped);
       setPanelOpen(false);
       setEditingUser(null);
-    } catch {}
-    finally {
+    } catch {
+      toast.error("Failed to save employee");
+    } finally {
       setSaving(false);
     }
   }
 
   function handleDelete(row) {
-    setUsers(current =>
-      current.filter(x => x.id !== row.id).map((x, i) => ({ ...x, serial: i + 1 }))
-    );
+    DeleteUser(row.id)
+      .then(() => {
+        setUsers(current =>
+          current
+            .filter(x => x.id !== row.id)
+            .map((x, i) => ({ ...x, serial: i + 1 }))
+        );
+        toast.success("Employee deleted successfully");
+      })
+      .catch(() => {
+        toast.error("Failed to delete employee");
+      });
   }
 
   const actions = [
@@ -203,6 +290,7 @@ export default function AdminPanel() {
 
   return (
     <div className="p-8">
+      <CustomToast />
       <div className="flex items-center justify-between mb-8">
         <div className="text-2xl font-bold">Employee Management</div>
         <Button onClick={openAdd} className="flex gap-2 items-center">
@@ -219,59 +307,27 @@ export default function AdminPanel() {
 
       <SidePanel
         open={panelOpen}
-        onClose={() => { setPanelOpen(false); setEditingUser(null); }}
+        onClose={() => {
+          setPanelOpen(false);
+          setEditingUser(null);
+        }}
         title={editingUser ? "Edit Employee" : "Add Employee"}
       >
-        <div className="p-6 text-sm">
-          <form onSubmit={handleSave} className="space-y-4">
-
-            <InputField label="Full name" name="fullName" value={form.fullName} onChange={handleChange} />
-            <InputField label="Email" name="email" value={form.email} onChange={handleChange} />
-
-            {!editingUser && (
-              <InputField label="Password" name="password" type="password" value={form.password} onChange={handleChange} showEye />
-            )}
-
-            <PhoneInputField label="Phone number" value={form.phone} onChange={(v) => setForm(f => ({ ...f, phone: v }))} />
-
-            <InputField label="Employee code" name="employeeCode" value={form.employeeCode} onChange={handleChange} />
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Role</label>
-              <select name="roleId" value={form.roleId} onChange={handleChange} className="w-full px-3 py-2 border rounded bg-white">
-                {roleOptions.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Employment type</label>
-              <select name="employmentType" value={form.employmentType} onChange={handleChange} className="w-full px-3 py-2 border rounded bg-white">
-                {employmentOptions.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Department</label>
-              <select name="department" value={form.department} onChange={handleChange} className="w-full px-3 py-2 border rounded bg-white">
-                {departmentOptions.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
-            </div>
-
-            <InputField label="Designation" name="designation" value={form.designation} onChange={handleChange} />
-
-            <InputField label="Date of joining" name="dateOfJoining" type="date" value={form.dateOfJoining} onChange={handleChange} />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputField label="Latitude" name="latitude" value={form.latitude} onChange={handleChange} />
-              <InputField label="Longitude" name="longitude" value={form.longitude} onChange={handleChange} />
-            </div>
-
-            <div className="flex gap-3 justify-end pt-4">
-              <Button variant="outline" type="button" onClick={() => setPanelOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-            </div>
-          </form>
-        </div>
+        <EmployeeForm
+          form={form}
+          saving={saving}
+          editingUser={editingUser}
+          roleOptions={roleOptions}
+          employmentOptions={employmentOptions}
+          departmentOptions={departmentOptions}
+          onChange={handleChange}
+          onPhoneChange={v => setForm(f => ({ ...f, phone: v }))}
+          onCancel={() => {
+            setPanelOpen(false);
+            setEditingUser(null);
+          }}
+          onSubmit={handleSaveWithPassword}
+        />
       </SidePanel>
     </div>
   );
