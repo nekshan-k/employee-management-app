@@ -40,7 +40,6 @@ export default function StatsGrid({ status, checkInDiffText, checkOutDiffText, b
       <StatCard title="Worked" icon={<FaRegClock className="text-primary500" />}>
         <div className="text-lg font-semibold text-primary500">{workingTimeText}</div>
         <div className="text-[11px] text-foundation-neurtal-neurtal-500 mt-1">Standard: 8h incl. 30m</div>
-        <div className="text-[11px] text-foundation-neurtal-neurtal-500">Actual: {(workingTimeMs / 1000 / 3600).toFixed(2)} h</div>
       </StatCard>
     </div>
   );

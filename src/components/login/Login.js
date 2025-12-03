@@ -151,14 +151,16 @@ export default function Login() {
                   </button>
                 </div>
 
-                <InputField
-                  label=""
-                  name="password"
-                  type="password"
-                  value={data.password}
-                  onChange={handleChange}
-                  placeholder="Enter your password"
-                />
+               <InputField
+  label=""
+  name="password"
+  type="password"
+  value={data.password}
+  onChange={handleChange}
+  placeholder="Enter your password"
+  showEye={true}
+/>
+
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-1 mb-2">
                   <label className="flex items-center select-none cursor-pointer">

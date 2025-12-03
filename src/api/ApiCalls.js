@@ -51,3 +51,19 @@ export const getAttendanceHistory = (userId, from, to) =>
   apiClient1.get(`/attendance/${userId}/history`, {
     params: { from, to }
   });
+
+  export const getLaveBalance = userId  => apiClient1.get(`/leaves/balance/${userId }`)
+   export const getLaveHistoryByUserId = userId  => apiClient1.get(`/leaves/history/${userId }`)
+
+   export const ApplyLeave = payload => apiClient1.post("/leaves/apply", payload)
+
+  //  Admin Panle apis
+
+  export const getAllUser = () => apiClient1.get("/users")
+
+  export const getAttendanceHistoryForAll = ( from, to) =>
+  apiClient1.get(`/attendance/allUserHistory`, {
+    params: { from, to }
+  });
+
+  export const SaveEditUser = payload => apiClient1.post("/users", payload)

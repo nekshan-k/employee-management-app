@@ -1,53 +1,8 @@
-import React, { useMemo, useState, useRef, useLayoutEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from "react";
 import SidePanel from "../../ui/SidePanel";
 import DayDetailPanel from "../../UserPanel/Leaves/OverAllComponent/DayDetailPanel";
 import ReusableDataTable from "../../ui/tables/ReusableDataTable";
-
-const nationalEvents = [
-  { date: "2025-01-01", type: "holiday", label: "New Year's Day" },
-  { date: "2025-01-26", type: "holiday", label: "Republic Day" },
-  { date: "2025-03-14", type: "holiday", label: "Holi" },
-  { date: "2025-04-18", type: "holiday", label: "Good Friday" },
-  { date: "2025-05-01", type: "holiday", label: "Labour Day" },
-  { date: "2025-08-15", type: "holiday", label: "Independence Day" },
-  { date: "2025-10-02", type: "holiday", label: "Gandhi Jayanti" },
-  { date: "2025-10-20", type: "holiday", label: "Diwali" },
-  { date: "2025-11-05", type: "holiday", label: "Guru Nanak Jayanti" },
-  { date: "2025-12-25", type: "holiday", label: "Christmas" }
-];
-
-const employeeDayEvents = [
-  { date: "2025-11-10", type: "half-present", label: "0.5 day Present (Desktop)", hours: "05:39" },
-  { date: "2025-11-10", type: "absent", label: "0.5 day Absent" },
-  { date: "2025-11-11", type: "present", label: "Present (Desktop)", hours: "07:37" },
-  { date: "2025-11-12", type: "present", label: "Present (Desktop)", hours: "07:52" },
-  { date: "2025-11-13", type: "present", label: "Present (Desktop)", hours: "07:41" },
-  { date: "2025-11-14", type: "present", label: "Present (Desktop)", hours: "07:47" },
-  { date: "2025-11-15", type: "present", label: "Present (Desktop)", hours: "05:44" },
-  { date: "2025-11-17", type: "present", label: "Present (Desktop)", hours: "07:39" },
-  { date: "2025-11-18", type: "present", label: "Present (Desktop)", hours: "08:00" },
-  { date: "2025-11-19", type: "present", label: "Present (Desktop)", hours: "07:44" },
-  { date: "2025-11-20", type: "present", label: "Present (Desktop)", hours: "07:46" },
-  { date: "2025-11-21", type: "present", label: "Present (Desktop)", hours: "07:50" },
-  {
-    date: "2025-11-24",
-    type: "present",
-    label: "Present (Desktop)",
-    hours: "07:58",
-    shift: "General",
-    shiftTime: "12:30 - 20:30",
-    summary: { firstCheckIn: "12:26", lastCheckOut: "20:42", totalHours: "07:58", paidBreak: "00:18" },
-    punches: [
-      { time: "12:26", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-In" },
-      { time: "15:06", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-Out" },
-      { time: "15:24", device: "Desktop", location: "Trikuta Nagar, Jammu, Jammu district, Jammu and Kashmir, 180012, India", tag: "Check-In" }
-    ]
-  },
-  { date: "2025-11-25", type: "half-present", label: "0.5 day Present (Desktop)", hours: "06:47" },
-  { date: "2025-11-25", type: "absent", label: "0.5 day Absent" }
-];
-
-const events = [...nationalEvents, ...employeeDayEvents];
+import { getAllUser, getNationalHolidays, getAttendanceHistoryForAll } from "../../../api/ApiCalls";
 
 function getMonthDays(year, month) {
   const d = new Date(year, month + 1, 0).getDate();
@@ -64,21 +19,34 @@ function formatISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function findEventsForDate(dateIso) {
-  return events.filter((e) => e.date === dateIso);
+function hhmmFromTs(ts) {
+  if (!ts) return "-";
+  const dt = new Date(ts);
+  if (isNaN(dt.getTime())) return "-";
+  return dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function deriveCheckTimes(ev) {
-  if (!ev) return { checkIn: "-", checkOut: "-" };
-  if (ev.summary) return { checkIn: ev.summary.firstCheckIn || "-", checkOut: ev.summary.lastCheckOut || "-" };
-  if (ev.punches && ev.punches.length) {
-    const first = ev.punches[0]?.time || "-";
-    const last = ev.punches[ev.punches.length - 1]?.time || "-";
-    return { checkIn: first, checkOut: last };
-  }
-  if (ev.hours) return { checkIn: ev.hours, checkOut: "-" };
-  return { checkIn: "-", checkOut: "-" };
+function calcSessionDuration(session, isToday) {
+  if (!session?.checkIn) return 0;
+  const checkInTime = new Date(session.checkIn);
+  let checkOutTime;
+  if (session.checkOut) checkOutTime = new Date(session.checkOut);
+  else if (isToday) checkOutTime = new Date();
+  else { checkOutTime = new Date(checkInTime); checkOutTime.setHours(23,59,59,999); }
+  const breaks = session.breaks || [];
+  const breakDuration = breaks.reduce((sum, br) => {
+    if (br.breakStartTime && br.breakEndTime) {
+      const bStart = new Date(br.breakStartTime);
+      const bEnd = new Date(br.breakEndTime);
+      return sum + (bEnd - bStart);
+    }
+    return sum;
+  }, 0);
+  const totalDuration = (checkOutTime - checkInTime) - breakDuration;
+  return Math.max(0, totalDuration / (1000 * 60));
 }
+
+const START_HALF_DAY_HOUR = 12, START_HALF_DAY_MIN = 30;
 
 export default function EmployeeAttendanceTable() {
   const today = new Date();
@@ -91,8 +59,116 @@ export default function EmployeeAttendanceTable() {
   const [weekIndex, setWeekIndex] = useState(0);
   const containerRef = useRef(null);
   const leftRef = useRef(0);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [nationalEvents, setNationalEvents] = useState([]);
+  const [loadingHolidays, setLoadingHolidays] = useState(false);
+  const [attendanceMap, setAttendanceMap] = useState({});
 
-  const users = useMemo(() => Array.from({ length: 8 }).map((_, i) => ({ id: `EMP${String(i + 1).padStart(3, "0")}`, name: `User ${i + 1}` })), []);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingUsers(true);
+        const resp = await getAllUser();
+        if (!mounted) return;
+        const list = resp?.data?.data || resp?.data || [];
+        setUsers(list.map(u => ({ id: u.id, name: u.fullName || u.email || `User ${u.id}`, employeeCode: u.employeeCode || `EMP-${u.id}` })));
+      } catch {
+      } finally {
+        if (mounted) setLoadingUsers(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingHolidays(true);
+        const resp = await getNationalHolidays();
+        if (!mounted) return;
+        const raw = Array.isArray(resp?.data?.data) ? resp.data.data : Array.isArray(resp?.data) ? resp.data : [];
+        const mapped = raw.map(h => ({ date: h.date, type: "holiday", label: h.title || h.name || h.description || "Holiday", meta: { description: h.description, recurring: h.recurring, organizationId: h.organizationId } }));
+        setNationalEvents(mapped);
+      } catch {
+      } finally {
+        if (mounted) setLoadingHolidays(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const from = formatISO(new Date(year, monthIndex, 1));
+      const to = formatISO(new Date(year, monthIndex + 1, 0));
+      try {
+        const resp = await getAttendanceHistoryForAll(from, to);
+        if (!mounted) return;
+        const days = Array.isArray(resp?.data?.data) ? resp.data.data : [];
+        const map = {};
+        const todayStr = formatISO(new Date());
+        days.forEach(day => {
+          const date = day.date;
+          const sessions = Array.isArray(day.sessions) ? day.sessions : [];
+          const groupedByUser = {};
+          sessions.forEach(s => {
+            const uid = s.userId;
+            groupedByUser[uid] = groupedByUser[uid] || [];
+            groupedByUser[uid].push(s);
+          });
+          Object.keys(groupedByUser).forEach(uidStr => {
+            const uid = Number(uidStr);
+            const userSessions = groupedByUser[uid];
+            const key = `${date}_${uid}`;
+            let totalMinutes = 0;
+            userSessions.forEach(s => {
+              const dur = typeof s.durationMinutes === "number" && !isNaN(s.durationMinutes) ? s.durationMinutes : calcSessionDuration(s, date === todayStr);
+              totalMinutes += dur || 0;
+            });
+            const checkIns = userSessions.map(s => s.checkIn).filter(Boolean).map(t => new Date(t).getTime());
+            const checkOuts = userSessions.map(s => s.checkOut).filter(Boolean).map(t => new Date(t).getTime());
+            const firstCheckIn = checkIns.length ? new Date(Math.min(...checkIns)).toISOString() : null;
+            const anyMissingCheckout = userSessions.some(s => !s.checkOut);
+            const lastCheckOut = (!anyMissingCheckout && checkOuts.length) ? new Date(Math.max(...checkOuts)).toISOString() : null;
+            const firstSession = userSessions[0];
+            const firstInDate = firstSession?.checkIn ? new Date(firstSession.checkIn) : null;
+            let type = "half-day";
+            if (firstInDate) {
+              const hr = firstInDate.getHours(), mn = firstInDate.getMinutes();
+              if (hr > START_HALF_DAY_HOUR || (hr === START_HALF_DAY_HOUR && mn > START_HALF_DAY_MIN)) type = "half-day";
+              else type = "present";
+            }
+            const pct = Math.min(100, Math.round((totalMinutes / (8 * 60)) * 100));
+            const label = totalMinutes > 0 ? `${(totalMinutes / 60).toFixed(2)}h` : "Half Day";
+            const isRunning = userSessions.some(s => s.checkIn && !s.checkOut);
+            const isToday = date === todayStr;
+            const sessionsWithDurationText = userSessions.map(s => ({ ...s, durationText: minsToHHMM(calcSessionDuration(s, isToday)) }));
+            map[key] = {
+              date,
+              userId: uid,
+              type,
+              label,
+              totalMinutes,
+              pct,
+              sessions: sessionsWithDurationText,
+              isRunning,
+              isToday,
+              firstCheckIn,
+              lastCheckOut
+            };
+          });
+        });
+        setAttendanceMap(map);
+      } catch {
+        setAttendanceMap({});
+      }
+    })();
+    return () => { mounted = false; };
+  }, [year, monthIndex]);
 
   const monthDays = useMemo(() => getMonthDays(year, monthIndex), [year, monthIndex]);
 
@@ -120,15 +196,31 @@ export default function EmployeeAttendanceTable() {
     return () => window.removeEventListener("resize", calc);
   }, [visibleDays]);
 
+  function getCellAttendance(dateIso, userId) {
+    const key = `${dateIso}_${userId}`;
+    if (attendanceMap[key]) return { ...attendanceMap[key], isHoliday: false };
+    const holiday = nationalEvents.find(h => h.date === dateIso);
+    if (holiday) return { isHoliday: true, holidayLabel: holiday.label, holidayMeta: holiday.meta, date: dateIso, type: "holiday" };
+    return null;
+  }
+
+  function deriveCellTimesForCell(att) {
+    if (!att) return { checkIn: "-", checkOut: "-" };
+    if (att.isHoliday) return { checkIn: att.holidayLabel || "Holiday", checkOut: "" };
+    const first = att.firstCheckIn ? hhmmFromTs(att.firstCheckIn) : "-";
+    const last = att.lastCheckOut ? hhmmFromTs(att.lastCheckOut) : "-";
+    return { checkIn: first, checkOut: last };
+  }
+
   const columns = useMemo(() => {
     const cols = [
       {
-        header: <div style={{ position: "sticky", left: 0, zIndex: 40, background: "var(--tw-bg-opacity, white)", padding: "8px 10px", textAlign: "left" }}>Emp ID</div>,
-        accessor: "id",
-        cell: (row) => <div style={{ position: "sticky", left: 0, zIndex: 30, background: "white", padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>{row.id}</div>
+        header: <div style={{ position: "sticky", left: 0, zIndex: 40, background: "white", padding: "8px 10px", textAlign: "left" }}>Emp ID</div>,
+        accessor: "employeeCode",
+        cell: (row) => <div style={{ position: "sticky", left: 0, zIndex: 30, background: "white", padding: "8px 10px", textAlign: "left", whiteSpace: "nowrap" }}>{row.employeeCode}</div>
       },
       {
-        header: <div style={{ position: "sticky", left: leftRef.current, zIndex: 35, background: "var(--tw-bg-opacity, white)", padding: "8px 10px", textAlign: "left" }}>Name</div>,
+        header: <div style={{ position: "sticky", left: leftRef.current, zIndex: 35, background: "white", padding: "8px 10px", textAlign: "left" }}>Name</div>,
         accessor: "name",
         cell: (row) => <div style={{ position: "sticky", left: leftRef.current, zIndex: 25, background: "white", padding: "8px 10px", textAlign: "left", whiteSpace: "normal" }}>{row.name}</div>
       }
@@ -139,24 +231,35 @@ export default function EmployeeAttendanceTable() {
         header: <div style={{ minWidth: 64, padding: "6px 4px", textAlign: "center" }}>{formatDayHeader(d)}</div>,
         accessor: `d_${iso}`,
         cell: (row) => {
-          const dayEvents = findEventsForDate(iso);
-          const empEvent = dayEvents.find((e) => e.type === "present" || e.type === "half-present" || e.type === "absent") || dayEvents[0] || null;
-          const { checkIn, checkOut } = deriveCheckTimes(empEvent);
-          const hasData = !!empEvent;
+          const att = getCellAttendance(iso, row.id);
+          const { checkIn, checkOut } = deriveCellTimesForCell(att);
+          const hasData = !!att;
           return (
             <div style={{ width: 72, height: 48, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <button
                 type="button"
                 onClick={() => {
                   if (!hasData) return;
-                  setSelectedDayEvents(dayEvents);
+                  const eventsToShow = [];
+                  if (att?.isHoliday) eventsToShow.push({ type: "holiday", date: iso, label: att.holidayLabel, meta: att.holidayMeta });
+                  else if (att) eventsToShow.push({
+                    date: att.date,
+                    type: att.type,
+                    label: att.label,
+                    totalMinutes: att.totalMinutes,
+                    pct: att.pct,
+                    sessions: att.sessions,
+                    isRunning: att.isRunning,
+                    isToday: att.isToday
+                  });
+                  setSelectedDayEvents(eventsToShow);
                   setSelectedUser(row);
                   setPanelOpen(true);
                 }}
                 style={{ width: "100%", textAlign: "center", background: "transparent", border: "none", cursor: hasData ? "pointer" : "default", opacity: hasData ? 1 : 0.4 }}
               >
-                <div style={{ fontSize: 11, lineHeight: "12px", color: "var(--tw-text-opacity, #6b7280)" }}>{checkIn}</div>
-                <div style={{ fontSize: 11, lineHeight: "12px", marginTop: 4, color: "var(--tw-text-opacity, #6b7280)" }}>{checkOut}</div>
+                <div style={{ fontSize: 11, lineHeight: "12px", color: "#6b7280" }}>{checkIn}</div>
+                <div style={{ fontSize: 11, lineHeight: "12px", marginTop: 4, color: "#6b7280" }}>{checkOut === "-" ? "" : checkOut}</div>
               </button>
             </div>
           );
@@ -164,9 +267,14 @@ export default function EmployeeAttendanceTable() {
       });
     });
     return cols;
-  }, [visibleDays]);
+  }, [visibleDays, attendanceMap, nationalEvents]);
 
-  const data = useMemo(() => users.map((u) => ({ id: u.id, name: u.name })), [users]);
+  const data = useMemo(() => users.map((u) => ({ id: u.id, name: u.name, employeeCode: u.employeeCode })), [users]);
+
+  function minsToHHMM(m) {
+    const mins = Math.floor(m || 0);
+    return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+  }
 
   return (
     <div className="space-y-4">
@@ -194,7 +302,7 @@ export default function EmployeeAttendanceTable() {
       </div>
 
       <div ref={containerRef} className="overflow-auto scrollbar-hide bg-white rounded-lg border border-border" style={{ WebkitOverflowScrolling: "touch", scrollBehavior: "smooth" }}>
-        <ReusableDataTable columns={columns} data={data} />
+        <ReusableDataTable columns={columns} data={data} loading={loadingUsers || loadingHolidays} />
       </div>
 
       <SidePanel open={panelOpen} onClose={() => setPanelOpen(false)}>
@@ -202,7 +310,7 @@ export default function EmployeeAttendanceTable() {
           <div className="mb-3">
             <div className="text-sm text-neutral400">Employee</div>
             <div className="font-medium">{selectedUser?.name || "-"}</div>
-            <div className="text-xs text-neutral400">{selectedUser?.id || ""}</div>
+            <div className="text-xs text-neutral400">{selectedUser?.employeeCode || ""} • ID: {selectedUser?.id || ""}</div>
           </div>
           <div>
             <DayDetailPanel open={!!selectedDayEvents.length} onClose={() => setPanelOpen(false)} date={selectedDayEvents[0] ? new Date(selectedDayEvents[0].date) : null} events={selectedDayEvents} />
